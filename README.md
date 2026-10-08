@@ -45,6 +45,14 @@ PoseBusters-valid molecule along each guided trajectory.
    guide-predicted property is closest to target. This lifts both validity and
    accuracy over returning the final endpoint.
 
+![Inference-time steering with a multimodal Meta Flow Map](figures/multimfm_steering.png)
+
+*Inference-time steering using a multimodal Meta Flow Map (Figure 2 of the paper). The
+unguided trajectory is dotted black. Conditioned on the current state (t, yₜ, aₜ), multiMFM
+draws look-aheads from the joint posterior p₁|ₜ(y₁, a₁ | yₜ, aₜ) (light grey). The reward
+r(x₁) scores those look-aheads and sends gradient signal back to guide the path — jointly
+over continuous coordinates y and the discrete simplex over atom types a.*
+
 Property accuracy is reported against a held-out **oracle** regressor (never used for
 steering) alongside PoseBusters validity.
 
@@ -56,27 +64,78 @@ error and sequence-diversity diagnostics instead. The C0 **guide** and **oracle*
 trained on disjoint halves of the parent sequences (`checkpoints/dna/c0/{guide,oracle}`),
 so the scorer never sees the steering signal.
 
-## Results — QM9 (n = 1000 per run)
+![Cyclizability-guided DNA design](figures/dmfm_cyclizability_schematic.png)
 
-Held-out **oracle** error, averaged over PoseBusters-valid molecules, for the shipped
-configuration (the CE/ESD student sampled with 4 flow-map jumps). `multiMFM` returns the
-final trajectory endpoint; `multiMFM-SS` returns the best PB-valid look-ahead from the
-same run. Per-property configs are in `configs/steer/qm9_table2.tsv`.
+*Cyclizability-guided DNA design (Figure 3 of the paper). A guide predictor f_guide defines
+the terminal reward and supplies gradients during sampling. Generated sequences are scored
+by a parent-disjoint oracle f_oracle (not shown), which plays no part in guidance. On the 58
+held-out test parents (8,294 windows) the guide reaches Pearson r = 0.88 at MAE 0.159 and the
+oracle r = 0.87 at MAE 0.162. Their independence comes from the training data — disjoint
+parents, different seeds — not from the architecture.*
 
-| Property   | multiMFM | PB-valid | multiMFM-SS | PB-valid |
-|------------|----------|:--------:|-------------|:--------:|
-| Cv         | 0.44 cal/mol·K | 0.905 | 0.43 cal/mol·K | 0.984 |
-| μ (dipole) | 0.56 D   | 0.913    | 0.56 D      | 0.962    |
-| α (alpha)  | 1.05 Bohr³ | 0.925  | 0.99 Bohr³  | 0.985    |
-| gap        | 465 meV  | 0.918    | 450 meV     | 0.984    |
-| HOMO       | 238 meV  | 0.902    | 238 meV     | 0.981    |
-| LUMO       | 306 meV  | 0.906    | 274 meV     | 0.972    |
+## Results — QM9 property steering
 
-Each row is the mean over 1–4 replicate runs of 1000 molecules. Steer-search raises
-validity on every property and lowers the error on four of the six. **Reproducibility:**
-runs are not bit-reproducible by default — identical configs and seeds can differ by up
-to ~12% in reported error, because non-deterministic reductions in the autograd backward
-move molecules across PoseBusters thresholds. Pass `DET=1` to
+Mean absolute error for molecular property guidance, reproducing Table 2 of the paper.
+All baseline values are quoted from Table 1 of TFG-Flow (Lin et al., 2025). Energy-related
+properties are in meV. **Bold** marks the best value in each column among the steering
+methods and *italic* the second best; the three reference rows are excluded from both.
+Lower is better.
+
+| Method | Model category | C_v | μ | α | Δε | ε_HOMO | ε_LUMO |
+|---|---|---|---|---|---|---|---|
+| Upper bound | *Reference* | 6.87 | 1.61 | 8.98 | 1464 | 645 | 1457 |
+| #Atoms | *Reference* | 1.97 | 1.05 | 3.86 | 886 | 426 | 813 |
+| Lower bound | *Reference* | 0.040 | 0.043 | 0.09 | 65 | 39 | 36 |
+| Cond-EDM | Continuous Diffusion | 1.065 | 1.123 | 2.78 | 671 | 371 | 601 |
+| EEGSDE | Continuous Diffusion | 0.941 | 0.777 | 2.50 | 487 | 302 | 447 |
+| UniGEM | Continuous Diffusion | 0.873 | 0.805 | 2.22 | 511 | **233** | 592 |
+| Cond-Flow | Multimodal Flow | 1.52 | 0.962 | 3.10 | 805 | 435 | 693 |
+| DPS | Continuous Diffusion | 5.26 | 63.2 | 51169 | 1380 | 744 | NA |
+| LGD | Continuous Diffusion | 3.77 | 1.51 | 7.15 | 1190 | 664 | 1200 |
+| FreeDoM | Continuous Diffusion | 2.84 | 1.35 | 5.92 | 1170 | 623 | 1160 |
+| MPGD | Continuous Diffusion | 2.86 | 1.51 | 4.26 | 1070 | 554 | 1060 |
+| UGD | Continuous Diffusion | 3.02 | 1.56 | 5.45 | 1150 | 582 | 1270 |
+| TFG | Continuous Diffusion | 2.77 | 1.33 | 3.90 | 893 | 568 | 984 |
+| TFG-Flow | Multimodal Flow | 1.75 | 0.817 | 2.32 | 804 | 364 | 941 |
+| **multiMFM** (ours) | Multimodal Flow | *0.44* | **0.56** | *1.05* | *465* | *238* | *306* |
+| **multiMFM-SS** (ours) | Multimodal Flow | **0.43** | **0.56** | **0.99** | **450** | *238* | **274** |
+
+Units: C_v in cal/mol·K, μ in D, α in Bohr³, and Δε / ε_HOMO / ε_LUMO in meV.
+
+multiMFM beats the published TFG-Flow values on every property. `multiMFM` returns the
+final trajectory endpoint; `multiMFM-SS` returns the best PoseBusters-valid look-ahead
+from the *same* run, so it costs no extra evaluations of the generative model. Both rows
+use the shipped configuration — the CE/ESD student sampled with 4 flow-map jumps, four
+inner steps and 32 posterior samples per outer step — with one configuration per property
+in `configs/steer/qm9_table2.tsv`; the only steer-search-specific setting is
+`--select-min-t`, the earliest time a look-ahead may be selected.
+
+Each row is the mean over 1–4 replicate runs of 1,000 molecules each. Errors are measured
+against a held-out **oracle** regressor that is never used for steering, averaged over
+PoseBusters-valid molecules (the `oracle_mae_pbvalid` field emitted by `steer_search`).
+
+### PoseBusters validity
+
+Guidance costs some structural validity relative to the unguided base model; steer-search
+recovers it, because it returns a valid molecule whenever the trajectory produced one.
+
+| Property | multiMFM | multiMFM-SS |
+|---|:--:|:--:|
+| C_v | 0.905 | 0.984 |
+| μ | 0.913 | 0.962 |
+| α | 0.925 | 0.985 |
+| Δε | 0.918 | 0.984 |
+| ε_HOMO | 0.902 | 0.981 |
+| ε_LUMO | 0.906 | 0.972 |
+
+One caution on reading the steer-search row: selection is made on the *guide*, so the
+guide's view of the selected molecule improves far more than the independent oracle's
+does. Only the oracle column is the result. Steer-search raises validity on every property
+and lowers the oracle error on four of the six, leaving μ and ε_HOMO unchanged.
+
+**Reproducibility:** runs are not bit-reproducible by default — identical configs and
+seeds can differ by up to ~12% in reported error, because non-deterministic reductions in
+the autograd backward move molecules across PoseBusters thresholds. Pass `DET=1` to
 `scripts/reproduce_steer_table.sh` for exactly repeatable numbers (~15% slower).
 
 ## Models — DNA (dMFM)
