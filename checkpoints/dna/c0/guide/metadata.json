@@ -1,0 +1,43 @@
+{
+  "args": {
+    "batch_size": 1024,
+    "data_pt": "data/yeast_parent_disjoint/yeast_parent_L50.pt",
+    "device": "cuda:0",
+    "epochs": 150,
+    "lr": 0.001,
+    "model_type": "park_cnn",
+    "out_dir": "workdir/yeast_parent_c0_guide_2026-07-26",
+    "patience": 20,
+    "reverse_complement_augmentation": true,
+    "reverse_complement_average": true,
+    "role": "guide",
+    "seed": 0,
+    "split_pt": "data/yeast_parent_disjoint/yeast_parent_L50_split_seed0.pt",
+    "test_split": "test",
+    "train_split": "a_train",
+    "validation_split": "a_val",
+    "weight_decay": 0.0001
+  },
+  "n_test": 8294,
+  "n_train": 32890,
+  "n_validation": 4147,
+  "parent_counts": {
+    "test": 58,
+    "train": 230,
+    "validation": 29
+  },
+  "test_metrics": {
+    "mae": 0.15877169370651245,
+    "n": 8294,
+    "pearson": 0.8774120752094197,
+    "rmse": 0.23064517974853516,
+    "spearman": 0.8838295621073193
+  },
+  "validation_metrics": {
+    "mae": 0.1627875715494156,
+    "n": 4147,
+    "pearson": 0.8731016370688948,
+    "rmse": 0.24156861007213593,
+    "spearman": 0.8718751071948672
+  }
+}

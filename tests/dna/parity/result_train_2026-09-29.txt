@@ -1,0 +1,22 @@
+  a, b = torch.load(sys.argv[1]), torch.load(sys.argv[2])
+dmfm200_grad                 max|orig-port|=1.431e-06 rel=1.66e-07
+dmfm200_loss                 max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm200_mfm_diag_loss_mean   max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm200_mfm_esd_loss_mean    max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm200_mfm_s                max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm200_mfm_tcond            max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm200_mfm_u                max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm50_grad                  max|orig-port|=5.960e-07 rel=2.21e-07
+dmfm50_loss                  max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm50_mfm_diag_loss_mean    max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm50_mfm_esd_loss_mean     max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm50_mfm_s                 max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm50_mfm_tcond             max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm50_mfm_u                 max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step50_grad            max|orig-port|=7.153e-07 rel=2.69e-07
+dmfm_4step50_loss            max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step50_mfm_diag_loss_mean max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step50_mfm_esd_loss_mean max|orig-port|=5.960e-08 rel=5.97e-08
+dmfm_4step50_mfm_s           max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step50_mfm_tcond       max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step50_mfm_u           max|orig-port|=0.000e+00 rel=0.00e+00

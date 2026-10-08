@@ -1,0 +1,546 @@
+#!/usr/bin/env python
+"""C0 (cyclizability) guidance with the dMFM as the posterior sampler (the Table 1 experiment with dMFM).
+
+Ported from ``dirichlet-flow-matching/scripts/sample_yeast_split_dmfm_c0.py`` together with the
+``DMFMSteeringRunner`` of ``scripts/benchmark_yeast_split_dmfm_steering.py`` (both 2026-07-26), and
+extended with a ``--paired`` mode that follows the printed Table 1 protocol exactly.
+
+Which run / published number corresponds to which flags
+-------------------------------------------------------
+* **Table 1 as printed** (n=32 pilot) and its n=1000 rerun were produced by
+  ``dmfm.experiments.sample_c0_guidance``: GLASS-posterior value gradients on the *base DFM*
+  (4 Euler GLASS steps, MC=8), no dMFM involved. This module reproduces that code path with
+  ``--paired --posterior glass`` + the Table 1 settings below (identical numerics; checked in
+  ``tests/dna/test_api.py::test_paired_glass_equals_table1_sampler``).
+* **Table 1 with dMFM, same protocol** (the comparison the paper text implies):
+  ``--paired --posterior dmfm`` + the Table 1 settings. Only the posterior sampler changes: the
+  4 GLASS Euler steps on the base DFM become 4 composed flow-map steps of the dMFM student
+  (``linspace(0, 1, 5)``); reward, guidance_frac, t-window, trajectory steps, MC budget, frozen
+  per-sample MC pool and noise pairing are identical. Wrapper:
+  ``scripts/dna/table1_c0_guidance_dmfm.sbatch`` (n=1000).
+
+  **Which student.** ``--nfe_value`` composed steps take jumps of ``1/nfe_value``, and the two
+  shipped L=50 dMFM artifacts were distilled for different jumps: ``checkpoints/dna/dmfm``
+  (ESD on random two-time gaps, selected on ``val_loss``; used as a *one-step* map by Tables 13
+  and 17) and ``checkpoints/dna/dmfm_4step`` (ESD on gaps in ``[0, 0.25]``, selected on
+  ``val_mfm_probe_esd_gap_0.25``; used at *4 steps* by Table 18). ``--student_ckpt`` therefore
+  defaults to whichever matches ``--nfe_value``, and a mismatched pairing needs
+  ``--allow_gap_mismatch``. The first n=1000 dMFM run (job 49277977, 2026-09-29) composed 4
+  gap-0.25 steps of the ``checkpoints/dna/dmfm`` student and guided ~3x worse than GLASS; see
+  ``docs/dmfm_glass_parity.md`` for the matched comparison. Reproduce that run with
+  ``--student_ckpt checkpoints/dna/dmfm/L50/epoch=95-step=49000.ckpt --allow_gap_mismatch``.
+* **The surviving dMFM run** ``workdir/yeast_parent_dmfm_matched_target{1p0,m1p0}_mc8_20260726``
+  (n=32, 2026-07-26, not in the paper; oracle scores in
+  ``workdir/c0_oracle_matched_old_new_dmfm_20260726/oracle``) is the default protocol
+  (no ``--paired``) with ``--n_samples 32 --batch_size 8 --mc 8 --nfe_sample 64 --nfe_value 4
+  --t_max 0.95 --guide_t_start 0.5 --guide_t_end 0.95 --guidance_frac 8 --coeff_cap 10
+  --grad_clip 10 --reward_sigma 0.15 --reward_scale 0.5 --seed 0``. That protocol draws *fresh*
+  MC noise (``torch.randn``) at every guided step and generates the unguided and guided sets
+  as two separate streams (not noise-paired), so its numbers are not directly comparable with
+  Table 1.
+
+Table 1 settings (both targets): ``--seed 0 --batch_size 8 --mc 8 --mc_chunk 8 --nfe_sample 64
+--nfe_value 4 --t_max 0.95 --guide_t_start 0.50 --guide_t_end 0.95 --guidance_frac 8.0
+--coeff_cap 10.0 --grad_clip 10.0 --reward_sigma 0.15 --reward_scale 0.5 --target_c0 {1.0,-1.0}``.
+
+Outputs (both modes): ``args.json``, ``sample_scores.csv`` (``sample_idx, seed, unguided, guided,
+delta, *_abs_to_target, abs_to_target_improvement, seq_unguided, seq_guided``; guide scores of the
+hard sequences), ``sequences_{unguided,guided}.fa``, ``summary.json``. ``--paired`` also writes the
+``histogram.png``/``cdf.png`` of ``sample_c0_guidance``. Score with the independent oracle exactly
+like Table 1: ``python -m dmfm.experiments.score_c0_oracle --oracle_model_type park_cnn
+--reverse_complement_average --run_glob <out>/sample_scores.csv ...``.
+
+Port changes vs. the original script (default protocol): defaults point at the parent-disjoint
+L=50 base DFM, the shipped L=50 dMFM and the parent-disjoint C0 guide instead of the purged
+split65k models / Keras guide (the 2026-07-26 run passed exactly these files); ``--student_args``
+defaults to the ``args.json`` next to ``--student_ckpt`` (the original fell back to the *teacher's*
+args.json, which only worked for the legacy split65k student); the guide is
+:class:`dmfm.regressors.c0.ParkC0Regressor`, which equals the original ``dinko.torch_model.C0Torch``
+applied to ``dna_probs_to_park_input`` (strict load of the same state dict; rescoring the surviving
+run's sequences reproduces its stored guide scores to <= 1.1e-3, i.e. GPU TF32 precision).
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+import math
+import time
+from pathlib import Path
+from typing import Any
+
+import numpy as np
+import pandas as pd
+import torch
+import torch.nn.functional as F
+
+from dmfm import api, paths
+from dmfm.experiments.sample_c0_guidance import (
+    hard_token_strings,
+    score_hard,
+    summarize_scores,
+    target_distances_np,
+)
+from dmfm.utils.flow_utils import gaussian_denoiser_flow_step
+
+
+def parse_args(argv=None) -> argparse.Namespace:
+    p = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
+    p.add_argument("--teacher_ckpt", default=str(paths.base_ckpt(50)))
+    p.add_argument("--teacher_args", default=None)
+    p.add_argument("--student_args", default=None, help="dMFM args.json (default: next to --student_ckpt).")
+    p.add_argument(
+        "--student_ckpt",
+        default=None,
+        help="dMFM checkpoint. Default: the artifact distilled for --nfe_value composed steps "
+        "(paths.dmfm_ckpt for 1 step, paths.dmfm4_ckpt for a few-step composition). Pass a path "
+        "to override; job 49277977 is reproduced with --student_ckpt checkpoints/dna/dmfm/L50/"
+        "epoch=95-step=49000.ckpt --allow_gap_mismatch.",
+    )
+    p.add_argument(
+        "--student_kind",
+        choices=["auto", "dmfm", "dmfm4"],
+        default="auto",
+        help="Which shipped dMFM artifact to load when --student_ckpt is not given. 'auto' "
+        "matches --nfe_value (see dmfm.paths.dmfm_student_kind).",
+    )
+    p.add_argument(
+        "--allow_gap_mismatch",
+        action="store_true",
+        help="Permit a --nfe_value whose composed jump 1/--nfe_value lies outside the loaded "
+        "student's ESD training gaps. Needed to reproduce the 2026-09-29 n=1000 dMFM run "
+        "(job 49277977), which composed 4 gap-0.25 steps of the diagonal student.",
+    )
+    p.add_argument("--c0_ckpt", default=str(paths.c0_guide()))
+    p.add_argument("--out_dir", default=None)
+    p.add_argument("--run_name", default="yeast_split_dmfm_c0_samples")
+    p.add_argument("--target_c0", type=float, default=1.0)
+    p.add_argument("--target_c0_second", type=float, default=None)
+    p.add_argument("--n_samples", type=int, default=1000)
+    p.add_argument("--batch_size", type=int, default=10)
+    p.add_argument("--mc", type=int, default=16)
+    p.add_argument("--nfe_sample", type=int, default=96)
+    p.add_argument("--t_max", type=float, default=1.0)
+    p.add_argument("--nfe_value", type=int, default=1)
+    p.add_argument("--guide_t_start", type=float, default=0.01)
+    p.add_argument("--guide_t_end", type=float, default=0.95)
+    p.add_argument("--guidance_frac", type=float, default=8.0)
+    p.add_argument("--coeff_cap", type=float, default=10.0)
+    p.add_argument("--grad_clip", type=float, default=10.0)
+    p.add_argument("--reward_sigma", type=float, default=0.15)
+    p.add_argument("--reward_scale", type=float, default=1.0)
+    p.add_argument("--seed", type=int, default=0)
+    # --- additions (the defaults keep the original behaviour) ---
+    p.add_argument(
+        "--paired",
+        action="store_true",
+        help="Table 1 protocol: per-sample initial noise seed+i, frozen per-sample MC pool "
+        "(seed+1e6+i), guided and unguided integrated in lockstep from the same noise.",
+    )
+    p.add_argument(
+        "--posterior",
+        choices=["dmfm", "glass"],
+        default="dmfm",
+        help="Posterior sampler inside the value gradient (--paired only). 'glass' = the base-DFM "
+        "GLASS sampler of Table 1 as printed; 'dmfm' = composed dMFM flow maps.",
+    )
+    p.add_argument(
+        "--grad_normalize",
+        action="store_true",
+        help="--paired only: rescale the value gradient to exactly --grad_clip instead of only "
+        "clipping it down, making the guidance step scale-free. Off by default, so every stored "
+        "result is unaffected. The Table 1 settings were tuned to the GLASS-4 gradient scale; a "
+        "dMFM flow-map posterior's gradient is several times larger there, so the stock settings "
+        "over-drive it. See docs/dmfm_glass_parity.md.",
+    )
+    p.add_argument("--mc_chunk", type=int, default=None, help="--paired only; default = --mc.")
+    p.add_argument("--sample_start", type=int, default=0,
+                   help="--paired only: first sample id of this shard (use a multiple of --batch_size so "
+                   "batches are the same as in an unsharded run).")
+    p.add_argument("--sample_stop", type=int, default=None, help="--paired only: stop id (default --n_samples).")
+    p.add_argument("--hist_bins", type=int, default=50)
+    return p.parse_args(argv)
+
+
+def target_list(args: argparse.Namespace) -> list[float]:
+    targets = [float(args.target_c0)]
+    if args.target_c0_second is not None:
+        targets.append(float(args.target_c0_second))
+    return targets
+
+
+def summarize_repeat(scores: torch.Tensor, target: float) -> dict[str, float]:
+    d = (scores - float(target)).abs()
+    return {
+        "mae": float(d.mean()),
+        "frac05": float((d <= 0.05).float().mean()),
+        "frac10": float((d <= 0.10).float().mean()),
+    }
+
+
+class DMFMSteeringRunner:
+    """The 2026-07-26 ``DMFMSteeringRunner`` (default protocol), unchanged apart from loading."""
+
+    def __init__(self, cli: argparse.Namespace, device: torch.device):
+        self.cli = cli
+        self.device = device
+        self.teacher, self.cfg = api.load_base(ckpt=cli.teacher_ckpt, device=device)
+        self.L = int(self.cfg.seq_len)
+        self.K = int(self.cfg.alphabet_size)
+        self.student = load_student(cli, device)
+        self.c0 = api.load_c0("guide", device, ckpt=cli.c0_ckpt)
+
+    def cyclizability_score(self, x_acgt: torch.Tensor) -> torch.Tensor:
+        return self.c0(x_acgt)
+
+    def reward_from_score(self, score: torch.Tensor) -> torch.Tensor:
+        return -0.5 * ((score - float(self.cli.target_c0)) / float(self.cli.reward_sigma)).pow(2)
+
+    def target_reward(self, x1_acgt: torch.Tensor) -> torch.Tensor:
+        return self.reward_from_score(self.cyclizability_score(x1_acgt))
+
+    @torch.no_grad()
+    def score_terminal(self, x: torch.Tensor):
+        soft = self.cyclizability_score(x)
+        tok = x.argmax(-1)
+        hard = F.one_hot(tok, self.K).float()
+        hard_score = self.cyclizability_score(hard)
+        return soft.detach(), hard_score.detach(), tok.detach()
+
+    def dmfm_integrate_diff(self, eps0, x_cond, t_cond, n_steps: int):
+        x = eps0
+        grid = torch.linspace(0, 1, int(n_steps) + 1, device=x.device, dtype=x.dtype)
+        for r0, r1 in zip(grid[:-1], grid[1:]):
+            b = x.shape[0]
+            x = self.student(r0.expand(b), r1.expand(b), x, t_cond, x_cond)
+        return x
+
+    def value_grad_target_dmfm(self, x: torch.Tensor, t: torch.Tensor, *, n_mc: int, n_steps: int):
+        B = x.shape[0]
+        x_leaf = x.detach().clone().requires_grad_(True)
+        eps = torch.randn(B * n_mc, self.L, self.K, device=x.device, dtype=x.dtype)
+        x_rep = x_leaf.repeat_interleave(n_mc, 0)
+        t_rep = t.detach().to(x.device, x.dtype).repeat_interleave(n_mc)
+        x1 = self.dmfm_integrate_diff(eps, x_rep, t_rep, n_steps=n_steps)
+        r = float(self.cli.reward_scale) * self.target_reward(x1).reshape(B, n_mc)
+        V = torch.logsumexp(r, dim=1) - math.log(n_mc)
+        grad = torch.autograd.grad(V.sum(), x_leaf)[0]
+        return V.detach(), grad.detach()
+
+    @torch.no_grad()
+    def sample_uncond_batch(self, B: int) -> torch.Tensor:
+        x = torch.randn(B, self.L, self.K, device=self.device)
+        grid = torch.linspace(0, float(self.cli.t_max), int(self.cli.nfe_sample) + 1, device=self.device)
+        for s0, s1 in zip(grid[:-1], grid[1:]):
+            x, _, _ = gaussian_denoiser_flow_step(self.cfg, self.teacher, x, s0.expand(B), s1.expand(B))
+        return x
+
+    def sample_steered_batch(self, B: int, *, n_mc: int) -> torch.Tensor:
+        x = torch.randn(B, self.L, self.K, device=self.device)
+        grid = torch.linspace(0, float(self.cli.t_max), int(self.cli.nfe_sample) + 1, device=self.device)
+        for s0, s1 in zip(grid[:-1], grid[1:]):
+            b = x.shape[0]
+            s = s0.expand(b)
+            t_next = s1.expand(b)
+            dt = float(s1 - s0)
+            with torch.no_grad():
+                x_base, _, _ = gaussian_denoiser_flow_step(self.cfg, self.teacher, x, s, t_next)
+            if float(s0) >= self.cli.guide_t_start and float(s0) <= self.cli.guide_t_end:
+                _, g = self.value_grad_target_dmfm(x, s, n_mc=n_mc, n_steps=self.cli.nfe_value)
+                gnorm = g.flatten(1).norm(dim=1).clamp_min(1e-8)
+                if self.cli.grad_clip is not None:
+                    g = g * (float(self.cli.grad_clip) / gnorm).clamp(max=1.0)[:, None, None]
+                coeff = float(self.cli.guidance_frac) * self.teacher.sde_sigma_sq(s)
+                coeff = coeff.clamp(max=float(self.cli.coeff_cap))
+                x = x_base + dt * coeff[:, None, None] * g
+            else:
+                x = x_base
+        return x.detach()
+
+    def generate_many(self, *, n: int, batch: int, n_mc: int | None) -> dict[str, torch.Tensor]:
+        softs, hards, toks = [], [], []
+        done = 0
+        while done < n:
+            b = min(batch, n - done)
+            x = self.sample_uncond_batch(b) if n_mc is None else self.sample_steered_batch(b, n_mc=n_mc)
+            soft, hard, tok = self.score_terminal(x)
+            softs.append(soft.cpu())
+            hards.append(hard.cpu())
+            toks.append(tok.cpu())
+            done += b
+            if torch.cuda.is_available():
+                torch.cuda.empty_cache()
+        return {"soft_score": torch.cat(softs).reshape(-1), "hard_score": torch.cat(hards).reshape(-1),
+                "tokens": torch.cat(toks)}
+
+    def guided_step_count(self) -> int:
+        grid = torch.linspace(0, float(self.cli.t_max), int(self.cli.nfe_sample) + 1)
+        return sum(1 for s0 in grid[:-1] if self.cli.guide_t_start <= float(s0) <= self.cli.guide_t_end)
+
+    def dmfm_cost(self, mc: int) -> dict[str, float]:
+        n_guided = self.guided_step_count()
+        return {
+            "gen_nfe_per_output": float(self.cli.nfe_sample + n_guided * int(mc) * int(self.cli.nfe_value)),
+            "reward_evals_per_output": float(1 + n_guided * int(mc)),
+        }
+
+
+def resolve_student_ckpt(cli: argparse.Namespace, length: int = 50) -> str:
+    """Checkpoint the posterior sampler should use, and the gap-consistency check.
+
+    The two shipped L=50 dMFM artifacts were distilled for different two-time jumps
+    (``checkpoints/dna/dmfm``: ESD on random gaps, used as a one-step map by Tables 13/17;
+    ``checkpoints/dna/dmfm_4step``: ESD on gaps in [0, 0.25], selected on
+    ``val_mfm_probe_esd_gap_0.25``, used at 4 steps by Table 18). ``--nfe_value`` composes
+    ``1/nfe_value``-sized jumps, so the two must agree.
+    """
+    n_steps = int(cli.nfe_value)
+    if cli.student_ckpt is None:
+        kind = paths.dmfm_student_kind(n_steps) if cli.student_kind == "auto" else cli.student_kind
+        cli.student_ckpt = str(paths.dmfm_ckpt(length) if kind == "dmfm" else paths.dmfm4_ckpt(length))
+    if not cli.allow_gap_mismatch:
+        expected = str(paths.dmfm_ckpt_for_steps(length, n_steps).resolve())
+        if str(Path(cli.student_ckpt).resolve()) != expected:
+            raise SystemExit(
+                f"--nfe_value {n_steps} composes jumps of {1.0 / n_steps:.3g}, which the student at "
+                f"{paths.rel(cli.student_ckpt)} was not distilled for; the matching artifact is "
+                f"{paths.rel(expected)}. Pass --allow_gap_mismatch to keep the old (defective) "
+                "pairing, e.g. to reproduce job 49277977. See docs/dmfm_glass_parity.md."
+            )
+    return cli.student_ckpt
+
+
+def load_student(cli: argparse.Namespace, device: torch.device):
+    resolve_student_ckpt(cli)
+    if cli.student_args is None:
+        return api.load_dmfm(ckpt=cli.student_ckpt, device=device)
+    from dmfm.utils.model_loading import load_args_json
+    from dmfm.utils.model_loading import load_student as _load
+
+    student, incompat = _load(load_args_json(cli.student_args), alphabet_size=4, device=device,
+                              student_ckpt=cli.student_ckpt)
+    if incompat is not None and (incompat.missing_keys or incompat.unexpected_keys):
+        raise RuntimeError(f"incompatible dMFM checkpoint {cli.student_ckpt}: {incompat}")
+    for p in student.parameters():
+        p.requires_grad_(False)
+    return student.eval()
+
+
+def _rows(sample_ids, unguided_scores, guided_scores, seq_unguided, seq_guided, seed, targets):
+    ung_dist = target_distances_np(unguided_scores, targets)
+    gui_dist = target_distances_np(guided_scores, targets)
+    rows = []
+    for idx, ung, gui, du, dg, su, sg in zip(sample_ids, unguided_scores, guided_scores, ung_dist, gui_dist,
+                                            seq_unguided, seq_guided):
+        rows.append({
+            "sample_idx": int(idx),
+            "seed": int(seed + idx),
+            "unguided": float(ung),
+            "guided": float(gui),
+            "delta": float(gui - ung),
+            "unguided_abs_to_target": float(du),
+            "guided_abs_to_target": float(dg),
+            "abs_to_target_improvement": float(du - dg),
+            "seq_unguided": su,
+            "seq_guided": sg,
+        })
+    return rows
+
+
+def _write_sequences(out_dir: Path, df: pd.DataFrame) -> None:
+    with open(out_dir / "sequences_unguided.fa", "w") as f_ung, open(out_dir / "sequences_guided.fa", "w") as f_gui:
+        for _, row in df.iterrows():
+            sid = int(row["sample_idx"])
+            f_ung.write(f">sample_{sid} seed={int(row['seed'])}\n{row['seq_unguided']}\n")
+            f_gui.write(f">sample_{sid} seed={int(row['seed'])}\n{row['seq_guided']}\n")
+
+
+# ------------------------------------------------------------------ default (original) protocol
+
+def run_original(args: argparse.Namespace, out_dir: Path, device: torch.device) -> None:
+    runner = DMFMSteeringRunner(args, device)
+    torch.manual_seed(args.seed)
+    unguided = runner.generate_many(n=args.n_samples, batch=args.batch_size, n_mc=None)
+    torch.manual_seed(args.seed)
+    guided = runner.generate_many(n=args.n_samples, batch=args.batch_size, n_mc=args.mc)
+
+    targets = target_list(args)
+    ung_scores = unguided["hard_score"].numpy()
+    gui_scores = guided["hard_score"].numpy()
+    seq_ung = hard_token_strings(F.one_hot(unguided["tokens"], runner.K).float(), runner.K)
+    seq_gui = hard_token_strings(F.one_hot(guided["tokens"], runner.K).float(), runner.K)
+    df = pd.DataFrame(_rows(range(len(ung_scores)), ung_scores, gui_scores, seq_ung, seq_gui, args.seed, targets))
+    df.to_csv(out_dir / "sample_scores.csv", index=False)
+    _write_sequences(out_dir, df)
+    summary = {
+        "n_samples": int(len(df)),
+        "targets": targets,
+        "unguided": summarize_repeat(unguided["hard_score"], args.target_c0),
+        "guided": summarize_repeat(guided["hard_score"], args.target_c0),
+        "delta": {
+            "mean": float(df["delta"].mean()),
+            "std": float(df["delta"].std(ddof=0)),
+            "abs_to_target_improvement_mean": float(df["abs_to_target_improvement"].mean()),
+            "frac_improved": float((df["abs_to_target_improvement"] > 0).mean()),
+        },
+        "dmfm_cost": runner.dmfm_cost(args.mc),
+    }
+    with open(out_dir / "summary.json", "w") as f:
+        json.dump(summary, f, indent=2, sort_keys=True)
+    print(pd.DataFrame([{"set": "unguided", **summary["unguided"]}, {"set": "guided", **summary["guided"]}]).to_string(index=False))
+
+
+# ---------------------------------------------------------------------- paired (Table 1) protocol
+
+def paired_batch(args, sample_ids, teacher, cfg, student, guide, device) -> list[dict[str, Any]]:
+    """One batch of Table 1 pairs; identical to ``sample_c0_guidance.sample_paired_batch`` except that
+    the posterior inside the value gradient is chosen by ``--posterior``."""
+    L, K = int(cfg.seq_len), int(cfg.alphabet_size)
+    x0 = api.paired_initial_noise(sample_ids, L, seed=args.seed, device=device)
+    pool = api.paired_eps_pool(sample_ids, L, mc=args.mc, seed=args.seed, device=device)
+    if args.posterior == "glass":
+        posterior = api.glass_posterior_fn(teacher, n_steps=args.nfe_value, end_time=1.0, solver="euler")
+    else:
+        posterior = api.dmfm_posterior_fn(student, sampler="flow_map", n_steps=args.nfe_value, end_time=1.0)
+    log_reward = api.c0_log_reward_fn(guide, args.target_c0, reward_sigma=args.reward_sigma,
+                                      reward_scale=args.reward_scale, target_c0_second=args.target_c0_second)
+    mc_chunk = args.mc_chunk or args.mc
+
+    def value_grad(x, t):
+        return api.value_and_grad(posterior, log_reward, x, t, pool, mc_chunk=mc_chunk)
+
+    x_guided, x_base = api.guided_sample(
+        teacher, cfg, x0, value_grad, nfe_traj=args.nfe_sample, t_max=args.t_max,
+        guide_t_start=args.guide_t_start, guide_t_end=args.guide_t_end, guidance_frac=args.guidance_frac,
+        coeff_cap=args.coeff_cap, grad_clip=args.grad_clip, return_unguided=True,
+        grad_normalize=bool(getattr(args, "grad_normalize", False)),
+    )
+    with torch.no_grad():
+        ung = score_hard(guide, x_base, K).detach().cpu().numpy()
+        gui = score_hard(guide, x_guided, K).detach().cpu().numpy()
+    return _rows(sample_ids, ung, gui, hard_token_strings(x_base, K), hard_token_strings(x_guided, K),
+                 args.seed, target_list(args))
+
+
+def run_paired(args: argparse.Namespace, out_dir: Path, device: torch.device) -> None:
+    teacher, cfg = api.load_base(ckpt=args.teacher_ckpt, device=device)
+    student = load_student(args, device) if args.posterior == "dmfm" else None
+    guide = api.load_c0("guide", device, ckpt=args.c0_ckpt)
+    rows: list[dict[str, Any]] = []
+    stop = args.n_samples if args.sample_stop is None else min(args.sample_stop, args.n_samples)
+    ids = list(range(args.sample_start, stop))
+    for start in range(0, len(ids), args.batch_size):
+        rows.extend(paired_batch(args, ids[start : start + args.batch_size], teacher, cfg, student, guide, device))
+        print(f"progress: {min(start + args.batch_size, len(ids))}/{len(ids)}", flush=True)
+        if torch.cuda.is_available():
+            torch.cuda.empty_cache()
+    df = pd.DataFrame(rows).sort_values("sample_idx").reset_index(drop=True)
+    write_paired_outputs(args, out_dir, df)
+
+
+def write_paired_outputs(args: argparse.Namespace, out_dir: Path, df: pd.DataFrame) -> None:
+    """sample_scores.csv, FASTA, summary.json and plots of a paired run (also used to merge shards)."""
+    df.to_csv(out_dir / "sample_scores.csv", index=False)
+    _write_sequences(out_dir, df)
+    targets = target_list(args)
+    unguided, guided = df["unguided"].to_numpy(), df["guided"].to_numpy()
+    summary = {
+        "n_samples": int(len(df)),
+        "targets": targets,
+        "protocol": f"paired, posterior={args.posterior}",
+        "unguided": summarize_scores(unguided, targets),
+        "guided": summarize_scores(guided, targets),
+        "delta": {
+            "mean": float(df["delta"].mean()),
+            "std": float(df["delta"].std(ddof=0)),
+            "median": float(df["delta"].median()),
+            "p05": float(df["delta"].quantile(0.05)),
+            "p95": float(df["delta"].quantile(0.95)),
+            "frac_score_increased": float((df["delta"] > 0).mean()),
+            "abs_to_target_improvement_mean": float(df["abs_to_target_improvement"].mean()),
+            "abs_to_target_improvement_median": float(df["abs_to_target_improvement"].median()),
+            "frac_improved": float((df["abs_to_target_improvement"] > 0).mean()),
+        },
+    }
+    with open(out_dir / "summary.json", "w") as f:
+        json.dump(summary, f, indent=2, sort_keys=True)
+    _plots(out_dir, unguided, guided, targets, args.hist_bins)
+    print(json.dumps(summary, indent=2, sort_keys=True), flush=True)
+
+
+def _plots(out_dir: Path, unguided: np.ndarray, guided: np.ndarray, targets: list[float], hist_bins: int) -> None:
+    import matplotlib
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
+    bins = np.linspace(min(float(unguided.min()), float(guided.min())), max(float(unguided.max()), float(guided.max())), hist_bins)
+    for kind in ("histogram", "cdf"):
+        plt.figure(figsize=(8, 4.5))
+        for values, label in ((unguided, "unguided"), (guided, "guided")):
+            if kind == "histogram":
+                plt.hist(values, bins=bins, alpha=0.55, density=True, label=label)
+            else:
+                xs = np.sort(values)
+                plt.plot(xs, np.arange(1, len(xs) + 1) / len(xs), label=label)
+        for i, target in enumerate(targets):
+            plt.axvline(target, color="black", linestyle="--", label=f"target {target:g}" if i == 0 else f"target2 {target:g}")
+        plt.xlabel("Cyclizability C0 score")
+        plt.ylabel("density" if kind == "histogram" else "empirical CDF")
+        plt.grid(alpha=0.25)
+        plt.legend()
+        plt.tight_layout()
+        plt.savefig(out_dir / f"{kind}.png", dpi=200)
+        plt.close()
+
+
+def write_run_env(out_dir: Path, device: torch.device) -> None:
+    """Record where this (shard of a) run executed: device, Slurm job/account/partition, host, torch."""
+    import os
+    import platform
+
+    env = {
+        "device": str(device),
+        "device_name": torch.cuda.get_device_name(0) if device.type == "cuda" else platform.processor() or "cpu",
+        "torch": torch.__version__,
+        "tf32_matmul": bool(torch.backends.cuda.matmul.allow_tf32) if device.type == "cuda" else False,
+        "cpu_threads": torch.get_num_threads(),
+        "host": platform.node(),
+        **{k.lower(): os.environ.get(k) for k in ("SLURM_JOB_ID", "SLURM_ARRAY_JOB_ID", "SLURM_ARRAY_TASK_ID",
+                                                   "SLURM_JOB_ACCOUNT", "SLURM_JOB_PARTITION")},
+    }
+    with open(out_dir / "run_env.json", "w") as f:
+        json.dump(env, f, indent=2, sort_keys=True)
+
+
+def main(argv=None) -> None:
+    args = parse_args(argv)
+    torch.manual_seed(args.seed)
+    np.random.seed(args.seed)
+    torch.backends.cuda.matmul.allow_tf32 = True
+    torch.backends.cudnn.allow_tf32 = True
+    if args.out_dir is None:
+        stamp = time.strftime("%Y-%m-%d_%H-%M-%S")
+        target_label = str(args.target_c0).replace("-", "m").replace(".", "p")
+        args.out_dir = str(paths.OUTPUTS / f"{args.run_name}_target{target_label}_{stamp}")
+    if args.posterior == "dmfm":
+        resolve_student_ckpt(args)  # so args.json records the checkpoint that will be loaded
+    out_dir = Path(args.out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    with open(out_dir / "args.json", "w") as f:
+        json.dump(vars(args), f, indent=2, sort_keys=True)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    write_run_env(out_dir, device)
+    print(f"device={device} protocol={'paired/' + args.posterior if args.paired else 'original'} "
+          f"target={target_list(args)} n={args.n_samples} mc={args.mc} out_dir={out_dir}", flush=True)
+    if args.paired:
+        run_paired(args, out_dir, device)
+    else:
+        if args.posterior != "dmfm" or args.mc_chunk is not None or args.sample_start or args.sample_stop is not None:
+            raise SystemExit("--posterior/--mc_chunk/--sample_start/--sample_stop only apply with --paired")
+        run_original(args, out_dir, device)
+    print(f"wrote {out_dir / 'sample_scores.csv'}", flush=True)
+
+
+if __name__ == "__main__":
+    main()

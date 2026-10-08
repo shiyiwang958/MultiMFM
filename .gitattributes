@@ -1,0 +1,8 @@
+# Model weights
+*.pt      filter=lfs diff=lfs merge=lfs -text
+*.pth     filter=lfs diff=lfs merge=lfs -text
+*.ckpt    filter=lfs diff=lfs merge=lfs -text
+*.zip     filter=lfs diff=lfs merge=lfs -text
+
+# QM9 is not shipped (it auto-downloads; see README "Data"). The DNA datasets are
+# shipped and tracked via the generic *.pt rule above.

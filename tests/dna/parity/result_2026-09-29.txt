@@ -1,0 +1,97 @@
+base100_logits               shape=(2, 100, 4)      max|orig-port|=9.537e-07 rel=3.15e-07
+base100_step                 shape=(2, 100, 4)      max|orig-port|=1.192e-07 rel=4.08e-08
+base100_v                    shape=(2, 100, 4)      max|orig-port|=4.768e-07 rel=8.94e-08
+base200_logits               shape=(2, 200, 4)      max|orig-port|=1.192e-06 rel=4.04e-07
+base200_step                 shape=(2, 200, 4)      max|orig-port|=2.384e-07 rel=7.56e-08
+base200_v                    shape=(2, 200, 4)      max|orig-port|=5.364e-07 rel=9.69e-08
+base400_logits               shape=(2, 400, 4)      max|orig-port|=1.073e-06 rel=3.64e-07
+base400_step                 shape=(2, 400, 4)      max|orig-port|=2.384e-07 rel=7.06e-08
+base400_v                    shape=(2, 400, 4)      max|orig-port|=4.768e-07 rel=7.75e-08
+base50_logits                shape=(2, 50, 4)       max|orig-port|=8.345e-07 rel=3.04e-07
+base50_step                  shape=(2, 50, 4)       max|orig-port|=1.192e-07 rel=4.63e-08
+base50_v                     shape=(2, 50, 4)       max|orig-port|=4.768e-07 rel=1.02e-07
+c0_guide                     shape=(5,)             max|orig-port|=5.960e-08 rel=9.81e-08
+c0_oracle                    shape=(5,)             max|orig-port|=1.490e-08 rel=6.35e-08
+dmfm100_flow4                shape=(6, 100, 4)      max|orig-port|=4.292e-06 rel=4.28e-06
+dmfm100_map                  shape=(6, 100, 4)      max|orig-port|=2.980e-07 rel=1.62e-07
+dmfm100_motif_V              shape=(2,)             max|orig-port|=4.768e-07 rel=1.66e-07
+dmfm100_motif_grad           shape=(2, 100, 4)      max|orig-port|=4.303e-05 rel=7.71e-05
+dmfm100_onestep              shape=(6, 100, 4)      max|orig-port|=2.503e-06 rel=2.50e-06
+dmfm100_v                    shape=(6, 100, 4)      max|orig-port|=5.662e-07 rel=1.36e-07
+dmfm200_flow4                shape=(6, 200, 4)      max|orig-port|=3.006e-05 rel=3.00e-05
+dmfm200_map                  shape=(6, 200, 4)      max|orig-port|=2.980e-07 rel=1.51e-07
+dmfm200_motif_V              shape=(2,)             max|orig-port|=1.192e-06 rel=3.71e-07
+dmfm200_motif_grad           shape=(2, 200, 4)      max|orig-port|=2.601e-04 rel=9.70e-05
+dmfm200_onestep              shape=(6, 200, 4)      max|orig-port|=5.424e-06 rel=5.43e-06
+dmfm200_v                    shape=(6, 200, 4)      max|orig-port|=5.960e-07 rel=1.30e-07
+dmfm400_flow4                shape=(6, 400, 4)      max|orig-port|=2.000e-05 rel=1.99e-05
+dmfm400_map                  shape=(6, 400, 4)      max|orig-port|=4.768e-07 rel=2.17e-07
+dmfm400_motif_V              shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm400_motif_grad           shape=(2, 400, 4)      max|orig-port|=2.499e-05 rel=3.47e-05
+dmfm400_onestep              shape=(6, 400, 4)      max|orig-port|=9.179e-06 rel=9.18e-06
+dmfm400_v                    shape=(6, 400, 4)      max|orig-port|=9.537e-07 rel=2.18e-07
+dmfm50_flow4                 shape=(6, 50, 4)       max|orig-port|=7.749e-06 rel=7.73e-06
+dmfm50_map                   shape=(6, 50, 4)       max|orig-port|=2.384e-07 rel=1.24e-07
+dmfm50_motif_V               shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm50_motif_grad            shape=(2, 50, 4)       max|orig-port|=3.785e-06 rel=1.08e-05
+dmfm50_onestep               shape=(6, 50, 4)       max|orig-port|=2.265e-06 rel=2.27e-06
+dmfm50_v                     shape=(6, 50, 4)       max|orig-port|=4.768e-07 rel=1.22e-07
+dmfm_4step100_flow4          shape=(6, 100, 4)      max|orig-port|=1.198e-05 rel=1.20e-05
+dmfm_4step100_map            shape=(6, 100, 4)      max|orig-port|=3.576e-07 rel=1.94e-07
+dmfm_4step100_motif_V        shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step100_motif_grad     shape=(2, 100, 4)      max|orig-port|=1.475e-04 rel=9.00e-05
+dmfm_4step100_onestep        shape=(6, 100, 4)      max|orig-port|=6.199e-06 rel=6.20e-06
+dmfm_4step100_v              shape=(6, 100, 4)      max|orig-port|=6.557e-07 rel=1.57e-07
+dmfm_4step200_flow4          shape=(6, 200, 4)      max|orig-port|=1.353e-05 rel=1.35e-05
+dmfm_4step200_map            shape=(6, 200, 4)      max|orig-port|=4.172e-07 rel=2.10e-07
+dmfm_4step200_motif_V        shape=(2,)             max|orig-port|=1.669e-06 rel=5.07e-07
+dmfm_4step200_motif_grad     shape=(2, 200, 4)      max|orig-port|=8.887e-05 rel=5.43e-05
+dmfm_4step200_onestep        shape=(6, 200, 4)      max|orig-port|=5.960e-06 rel=5.96e-06
+dmfm_4step200_v              shape=(6, 200, 4)      max|orig-port|=8.345e-07 rel=1.82e-07
+dmfm_4step400_flow4          shape=(6, 400, 4)      max|orig-port|=3.013e-05 rel=3.01e-05
+dmfm_4step400_map            shape=(6, 400, 4)      max|orig-port|=4.172e-07 rel=1.90e-07
+dmfm_4step400_motif_V        shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step400_motif_grad     shape=(2, 400, 4)      max|orig-port|=2.652e-05 rel=3.56e-05
+dmfm_4step400_onestep        shape=(6, 400, 4)      max|orig-port|=6.288e-06 rel=6.29e-06
+dmfm_4step400_v              shape=(6, 400, 4)      max|orig-port|=8.345e-07 rel=1.90e-07
+dmfm_4step50_flow4           shape=(6, 50, 4)       max|orig-port|=1.076e-05 rel=1.07e-05
+dmfm_4step50_map             shape=(6, 50, 4)       max|orig-port|=2.384e-07 rel=1.23e-07
+dmfm_4step50_motif_V         shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+dmfm_4step50_motif_grad      shape=(2, 50, 4)       max|orig-port|=2.224e-08 rel=3.76e-06
+dmfm_4step50_onestep         shape=(6, 50, 4)       max|orig-port|=2.086e-06 rel=2.09e-06
+dmfm_4step50_v               shape=(6, 50, 4)       max|orig-port|=4.768e-07 rel=1.22e-07
+glass100_conjunction_V       shape=(2,)             max|orig-port|=1.192e-06 rel=2.70e-07
+glass100_conjunction_grad    shape=(2, 100, 4)      max|orig-port|=1.490e-06 rel=8.96e-07
+glass100_euler               shape=(6, 100, 4)      max|orig-port|=1.252e-06 rel=1.25e-06
+glass100_gc_V                shape=(2,)             max|orig-port|=2.384e-07 rel=9.37e-08
+glass100_gc_grad             shape=(2, 100, 4)      max|orig-port|=3.576e-07 rel=5.20e-07
+glass100_motif_V             shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+glass100_motif_grad          shape=(2, 100, 4)      max|orig-port|=1.788e-06 rel=9.75e-07
+glass100_rk4                 shape=(6, 100, 4)      max|orig-port|=4.554e-04 rel=2.32e-05
+glass200_conjunction_V       shape=(2,)             max|orig-port|=5.960e-07 rel=1.49e-07
+glass200_conjunction_grad    shape=(2, 200, 4)      max|orig-port|=6.557e-07 rel=1.01e-06
+glass200_euler               shape=(6, 200, 4)      max|orig-port|=1.401e-06 rel=1.40e-06
+glass200_gc_V                shape=(2,)             max|orig-port|=7.153e-07 rel=2.75e-07
+glass200_gc_grad             shape=(2, 200, 4)      max|orig-port|=3.427e-07 rel=8.90e-07
+glass200_motif_V             shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+glass200_motif_grad          shape=(2, 200, 4)      max|orig-port|=9.239e-07 rel=1.48e-06
+glass200_rk4                 shape=(6, 200, 4)      max|orig-port|=8.600e-04 rel=3.72e-05
+glass400_conjunction_V       shape=(2,)             max|orig-port|=7.153e-07 rel=2.63e-07
+glass400_conjunction_grad    shape=(2, 400, 4)      max|orig-port|=5.662e-07 rel=8.38e-07
+glass400_euler               shape=(6, 400, 4)      max|orig-port|=2.682e-06 rel=2.68e-06
+glass400_gc_V                shape=(2,)             max|orig-port|=1.192e-06 rel=3.99e-07
+glass400_gc_grad             shape=(2, 400, 4)      max|orig-port|=1.788e-07 rel=8.46e-07
+glass400_motif_V             shape=(2,)             max|orig-port|=1.669e-06 rel=6.16e-07
+glass400_motif_grad          shape=(2, 400, 4)      max|orig-port|=1.729e-06 rel=2.04e-06
+glass400_rk4                 shape=(6, 400, 4)      max|orig-port|=2.313e-02 rel=1.11e-03
+glass50_conjunction_V        shape=(2,)             max|orig-port|=1.192e-06 rel=4.52e-07
+glass50_conjunction_grad     shape=(2, 50, 4)       max|orig-port|=2.742e-06 rel=9.12e-07
+glass50_euler                shape=(6, 50, 4)       max|orig-port|=9.537e-07 rel=9.52e-07
+glass50_gc_V                 shape=(2,)             max|orig-port|=0.000e+00 rel=0.00e+00
+glass50_gc_grad              shape=(2, 50, 4)       max|orig-port|=7.153e-07 rel=5.60e-07
+glass50_motif_V              shape=(2,)             max|orig-port|=6.557e-07 rel=4.91e-07
+glass50_motif_grad           shape=(2, 50, 4)       max|orig-port|=8.047e-07 rel=5.74e-07
+glass50_rk4                  shape=(6, 50, 4)       max|orig-port|=2.034e-04 rel=9.75e-06
+table1_V                     shape=(2,)             max|orig-port|=1.907e-06 rel=1.82e-07
+table1_grad                  shape=(2, 50, 4)       max|orig-port|=4.864e-05 rel=3.01e-06
+OVERALL max abs diff 0.023125648498535156 over 96 tensors

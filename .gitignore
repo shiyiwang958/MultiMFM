@@ -1,0 +1,38 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.eggs/
+build/
+dist/
+.ipynb_checkpoints/
+
+# Environments
+.venv/
+env/
+.envs/
+
+# Run outputs / logs
+outputs/
+logs/
+wandb/
+slurm-*.out
+
+# Caches (histograms under cache/histograms are tracked via .gitattributes/LFS)
+cache/matplotlib/
+cache/xdg/
+cache/torch/
+cache/tmp/
+
+# OS
+.DS_Store
+
+# Transient HF datasets locks / mamba temp files
+*.lock
+/mamba*
+
+# QM9 is fetched by the user (auto-downloads from Hugging Face); see README "Data".
+# The DNA tensors ARE shipped -- rebuilding them needs the raw loop-seq assay file,
+# which is not redistributed here.
+data/qm9/
+data/raw/

@@ -1,0 +1,26 @@
+[build-system]
+requires = ["setuptools>=61", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "multimfm"
+version = "0.1.0"
+description = "Inference-time steering for physical-property-guided molecular generation with meta flow maps"
+readme = "README.md"
+requires-python = ">=3.11"
+license = { text = "MIT" }
+# Runtime dependencies are provided by the conda/micromamba environment
+# (see environment.yml). This package is installed editable on top of it.
+
+[tool.setuptools]
+package-dir = { "" = "src" }
+
+[tool.setuptools.packages.find]
+where = ["src"]
+include = ["tabasco*", "multimfm*", "dmfm*"]
+
+[tool.setuptools.package-data]
+tabasco = ["utils/*.yaml"]
+
+[project.scripts]
+steer-search = "multimfm.steer_search:main"
