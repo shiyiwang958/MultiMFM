@@ -78,12 +78,12 @@ for best they take both places. Lower is better.
 
 | Method | Model category | C_v | μ | α | Δε | ε_HOMO | ε_LUMO |
 |---|---|---|---|---|---|---|---|
-| Cond-EDM | Continuous Diffusion | 1.065 | 1.123 | 2.78 | 671 | 371 | 601 |
 | EEGSDE | Continuous Diffusion | 0.941 | 0.777 | 2.50 | 487 | 302 | 447 |
 | UniGEM | Continuous Diffusion | 0.873 | 0.805 | 2.22 | 511 | **233** | 592 |
 | Cond-Flow | Multimodal Flow | 1.52 | 0.962 | 3.10 | 805 | 435 | 693 |
 | TFG | Continuous Diffusion | 2.77 | 1.33 | 3.90 | 893 | 568 | 984 |
 | TFG-Flow | Multimodal Flow | 1.75 | 0.817 | 2.32 | 804 | 364 | 941 |
+| ━━━━━━━━━━ | ━━━━━━━━━━━━━━━━━━ | ━━━━ | ━━━━ | ━━━━ | ━━━━ | ━━━━ | ━━━━ |
 | **multiMFM** (ours) | Multimodal Flow | *0.44* | **0.56** | *1.05* | *465* | *238* | *306* |
 | **multiMFM-SS** (ours) | Multimodal Flow | **0.43** | **0.56** | **0.99** | **450** | *238* | **274** |
 
