@@ -23,12 +23,6 @@ For molecules, **`steer_search`** additionally selects the best
 PoseBusters-valid molecule along each guided trajectory.
 
 
-<p align="center">
-  <img src="figures/multiMFM_SS.jpeg" width="46%" alt="steer_search results">
-  &nbsp;&nbsp;
-  <img src="figures/multiMFM.png" width="46%" alt="steering-only results">
-</p>
-
 ## Method
 
 1. **Base flow model** — a TABASCO discrete-flow-matching (DFM) transformer trained
@@ -75,26 +69,19 @@ parents, different seeds — not from the architecture.*
 
 ## Results — QM9 property steering
 
-Mean absolute error for molecular property guidance, reproducing Table 2 of the paper.
-All baseline values are quoted from Table 1 of TFG-Flow (Lin et al., 2025). Energy-related
-properties are in meV. **Bold** marks the best value in each column among the steering
-methods and *italic* the second best; the three reference rows are excluded from both.
-Lower is better.
+Mean absolute error for molecular property guidance, against the strongest published
+baselines (Table 2 of the paper, abridged — the full 16-row version with the reference
+bounds and the weaker training-free methods is in the paper). Baseline values are quoted
+from Table 1 of TFG-Flow (Lin et al., 2025). Energy-related properties are in meV.
+**Bold** marks the best value in each column, *italic* the second best; where two rows tie
+for best they take both places. Lower is better.
 
 | Method | Model category | C_v | μ | α | Δε | ε_HOMO | ε_LUMO |
 |---|---|---|---|---|---|---|---|
-| Upper bound | *Reference* | 6.87 | 1.61 | 8.98 | 1464 | 645 | 1457 |
-| #Atoms | *Reference* | 1.97 | 1.05 | 3.86 | 886 | 426 | 813 |
-| Lower bound | *Reference* | 0.040 | 0.043 | 0.09 | 65 | 39 | 36 |
 | Cond-EDM | Continuous Diffusion | 1.065 | 1.123 | 2.78 | 671 | 371 | 601 |
 | EEGSDE | Continuous Diffusion | 0.941 | 0.777 | 2.50 | 487 | 302 | 447 |
 | UniGEM | Continuous Diffusion | 0.873 | 0.805 | 2.22 | 511 | **233** | 592 |
 | Cond-Flow | Multimodal Flow | 1.52 | 0.962 | 3.10 | 805 | 435 | 693 |
-| DPS | Continuous Diffusion | 5.26 | 63.2 | 51169 | 1380 | 744 | NA |
-| LGD | Continuous Diffusion | 3.77 | 1.51 | 7.15 | 1190 | 664 | 1200 |
-| FreeDoM | Continuous Diffusion | 2.84 | 1.35 | 5.92 | 1170 | 623 | 1160 |
-| MPGD | Continuous Diffusion | 2.86 | 1.51 | 4.26 | 1070 | 554 | 1060 |
-| UGD | Continuous Diffusion | 3.02 | 1.56 | 5.45 | 1150 | 582 | 1270 |
 | TFG | Continuous Diffusion | 2.77 | 1.33 | 3.90 | 893 | 568 | 984 |
 | TFG-Flow | Multimodal Flow | 1.75 | 0.817 | 2.32 | 804 | 364 | 941 |
 | **multiMFM** (ours) | Multimodal Flow | *0.44* | **0.56** | *1.05* | *465* | *238* | *306* |
